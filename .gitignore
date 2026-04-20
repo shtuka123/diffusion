@@ -1,0 +1,66 @@
+# ===== Build output =====
+build/
+out/
+cmake-build-*/
+
+# ===== CMake generated =====
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# ===== Compiled binaries =====
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.exp
+
+# ===== CUDA artifacts =====
+*.cubin
+*.fatbin
+*.ptx
+*.i
+*.ii
+
+# ===== Data files (often big, regenerable) =====
+data/
+!data/.gitkeep
+
+# ===== Reference tensors & checkpoints (generated) =====
+*.bin
+*.pt
+*.ckpt
+*.npy
+*.npz
+
+# ===== PyTorch reference env =====
+python_ref/__pycache__/
+python_ref/.venv/
+python_ref/venv/
+*.pyc
+
+# ===== Editor / OS cruft =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Logs & outputs you'll generate during training =====
+*.log
+samples/
+checkpoints/
+runs/
