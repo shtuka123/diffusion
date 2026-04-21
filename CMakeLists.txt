@@ -41,3 +41,7 @@ add_executable(test_elementwise_vs_ref
 add_executable(bench_elementwise
     tests/bench_elementwise.cu
     kernels/elementwise.cu)
+
+add_executable(test_softmax_vs_ref
+    tests/test_softmax_vs_ref.cu
+    kernels/softmax.cu)
