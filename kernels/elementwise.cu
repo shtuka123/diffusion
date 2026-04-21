@@ -50,3 +50,25 @@ void bias_add(Tensor& y, const Tensor& x, const Tensor& bias) {
     bias_add_kernel<<<grid, block>>>(x.data, bias.data, y.data, n, feat);
     CUDA_CHECK_KERNEL();
 }
+
+// ReLU backward: dL/dx = dL/dy * (x > 0), elementwise.
+// Needs x (or y — same mask) from forward to compute the gradient mask.
+__global__ void relu_backward_kernel(
+    const float* dy, const float* x, float* dx, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    dx[i] = x[i] > 0.f ? dy[i] : 0.f;
+}
+
+void relu_backward(Tensor& dx, const Tensor& dy, const Tensor& x) {
+    if (dx.numel != dy.numel || dx.numel != x.numel) {
+        std::fprintf(stderr, "relu_backward: shape mismatch\n");
+        std::abort();
+    }
+    int n = (int)x.numel;
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    relu_backward_kernel<<<grid, block>>>(dy.data, x.data, dx.data, n);
+    CUDA_CHECK_KERNEL();
+}

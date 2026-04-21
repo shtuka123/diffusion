@@ -7,3 +7,9 @@ void cross_entropy_forward(
     const Tensor& logits,
     const int* labels_device,
     int B, int C);
+
+void cross_entropy_backward(
+    Tensor& dlogits,
+    const Tensor& logits,
+    const int* labels_device,
+    int B, int C);

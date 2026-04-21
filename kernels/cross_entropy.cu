@@ -86,3 +86,47 @@ void cross_entropy_forward(
     mean_reduce_kernel<<<1, 1>>>(per_row_loss.data, loss_scalar.data, B);
     CUDA_CHECK_KERNEL();
 }
+
+// CE + softmax backward (fused): dL/dx = (softmax(x) - one_hot(y)) / B
+// Each thread handles one element of the (B, C) gradient tensor.
+__global__ void ce_backward_kernel(
+    const float* logits, const int* labels,
+    float* dlogits, int B, int C)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = B * C;
+    if (tid >= total) return;
+
+    int b = tid / C;
+    int c = tid % C;
+    const float* row = logits + b * C;
+
+    // Recompute softmax for this row's element (stable variant).
+    // We don't need to store the full softmax — just this one element's prob.
+    float m = row[0];
+    for (int i = 1; i < C; ++i) if (row[i] > m) m = row[i];
+    float s = 0.f;
+    for (int i = 0; i < C; ++i) s += expf(row[i] - m);
+    float p_c = expf(row[c] - m) / s;
+
+    float one_hot = (c == labels[b]) ? 1.f : 0.f;
+    dlogits[tid] = (p_c - one_hot) / (float)B;
+}
+
+void cross_entropy_backward(
+    Tensor& dlogits,              // (B, C) output
+    const Tensor& logits,         // (B, C) input
+    const int* labels_device,     // (B,) device pointer
+    int B, int C)
+{
+    if (dlogits.size(0) != B || dlogits.size(1) != C) {
+        std::fprintf(stderr, "ce_backward: dlogits shape mismatch\n");
+        std::abort();
+    }
+    int n = B * C;
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    ce_backward_kernel<<<grid, block>>>(logits.data, labels_device,
+                                        dlogits.data, B, C);
+    CUDA_CHECK_KERNEL();
+}

@@ -49,3 +49,11 @@ add_executable(test_softmax_vs_ref
 add_executable(test_ce_vs_ref
     tests/test_ce_vs_ref.cu
     kernels/cross_entropy.cu)
+
+add_executable(test_relu_backward
+    tests/test_relu_backward.cu
+    kernels/elementwise.cu)
+
+add_executable(test_ce_backward
+    tests/test_ce_backward.cu
+    kernels/cross_entropy.cu)
