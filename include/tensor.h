@@ -109,6 +109,19 @@ public:
         std::printf("]\n");
     }
 
+    // Device-to-device copy. Must be same shape (numel check).
+    void copy_from(const Tensor& other) {
+        if (other.numel != numel) {
+            std::fprintf(stderr, "Tensor::copy_from size mismatch: %zu vs %zu\n",
+                        other.numel, numel);
+            std::abort();
+        }
+        if (numel > 0) {
+            CUDA_CHECK(cudaMemcpy(data, other.data, numel * sizeof(float),
+                                cudaMemcpyDeviceToDevice));
+        }
+    }
+
 
 
 };

@@ -30,7 +30,8 @@ set(KERNEL_MATMUL_CPU     kernels/matmul_cpu.cpp)
 set(KERNEL_ELEMENTWISE    kernels/elementwise.cu)
 set(KERNEL_SOFTMAX        kernels/softmax.cu)
 set(KERNEL_CE             kernels/cross_entropy.cu)
-
+set(KERNEL_LINEAR         kernels/linear.cu)
+set(KERNEL_OPTIM          kernels/optim.cu)
 # ===================================================================
 # Helper: declare an executable target
 #
@@ -79,6 +80,22 @@ add_target(bench_elementwise
     tests/bench_elementwise.cu
     ${KERNEL_ELEMENTWISE})
 
+add_target(test_linear_vs_ref
+    tests/test_linear_vs_ref.cu
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE})
+
+add_target(test_linear_backward
+    tests/test_linear_backward.cu
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE})
+
+add_target(test_optim_step
+    tests/test_optim_step.cu
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE}
+    ${KERNEL_CE} ${KERNEL_OPTIM})
+
+add_target(test_mnist_loader
+    tests/test_mnist_loader.cu)
+
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:
@@ -92,12 +109,15 @@ add_custom_target(validation_tests DEPENDS
     test_matmul_vs_ref
     test_elementwise_vs_ref
     test_softmax_vs_ref
-    test_ce_vs_ref)
+    test_ce_vs_ref
+    test_linear_vs_ref)   # new
 
 add_custom_target(backward_tests DEPENDS
     test_relu_backward
-    test_ce_backward)
+    test_ce_backward
+    test_linear_backward)  # new
 
 add_custom_target(benchmarks DEPENDS
     bench_matmul
     bench_elementwise)
+
