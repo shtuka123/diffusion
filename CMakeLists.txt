@@ -29,3 +29,7 @@ add_executable(bench_matmul
     kernels/matmul_cublas.cu
     kernels/matmul_cpu.cpp)
 target_link_libraries(bench_matmul PRIVATE cublas)
+
+add_executable(test_matmul_vs_ref
+    tests/test_matmul_vs_ref.cu
+    kernels/matmul.cu)
