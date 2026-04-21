@@ -33,3 +33,11 @@ target_link_libraries(bench_matmul PRIVATE cublas)
 add_executable(test_matmul_vs_ref
     tests/test_matmul_vs_ref.cu
     kernels/matmul.cu)
+
+add_executable(test_elementwise_vs_ref
+    tests/test_elementwise_vs_ref.cu
+    kernels/elementwise.cu)
+
+add_executable(bench_elementwise
+    tests/bench_elementwise.cu
+    kernels/elementwise.cu)
