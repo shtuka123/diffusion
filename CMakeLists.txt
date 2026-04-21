@@ -96,6 +96,11 @@ add_target(test_optim_step
 add_target(test_mnist_loader
     tests/test_mnist_loader.cu)
 
+add_target(train_mnist
+    src/train_mnist.cu
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE}
+    ${KERNEL_CE} ${KERNEL_OPTIM})
+
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:

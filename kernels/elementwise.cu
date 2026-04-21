@@ -72,3 +72,29 @@ void relu_backward(Tensor& dx, const Tensor& dy, const Tensor& x) {
     relu_backward_kernel<<<grid, block>>>(dy.data, x.data, dx.data, n);
     CUDA_CHECK_KERNEL();
 }
+
+// Per-row argmax: preds[b] = argmax_c logits[b, c]
+// One thread per row. Serial scan over C classes.
+__global__ void argmax_row_kernel(
+    const float* logits, int* preds, int B, int C)
+{
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    if (b >= B) return;
+
+    const float* row = logits + b * C;
+    int best = 0;
+    float best_v = row[0];
+    for (int c = 1; c < C; ++c) {
+        if (row[c] > best_v) { best_v = row[c]; best = c; }
+    }
+    preds[b] = best;
+}
+
+void argmax_row(int* preds_device, const Tensor& logits) {
+    int B = logits.size(0);
+    int C = logits.size(1);
+    int block = 128;
+    int grid = (B + block - 1) / block;
+    argmax_row_kernel<<<grid, block>>>(logits.data, preds_device, B, C);
+    CUDA_CHECK_KERNEL();
+}
