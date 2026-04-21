@@ -45,3 +45,7 @@ add_executable(bench_elementwise
 add_executable(test_softmax_vs_ref
     tests/test_softmax_vs_ref.cu
     kernels/softmax.cu)
+
+add_executable(test_ce_vs_ref
+    tests/test_ce_vs_ref.cu
+    kernels/cross_entropy.cu)
