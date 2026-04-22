@@ -53,3 +53,93 @@ void matmul(Tensor& C, const Tensor& A, const Tensor& B) {
     matmul_naive_kernel<<<grid, block>>>(A.data, B.data, C.data, M, K, N);
     CUDA_CHECK_KERNEL();
 }
+
+// C = A @ B^T
+//   A: (M, K), B: (N, K) — B is treated as if transposed, so the effective
+//   second operand has shape (K, N) and the product is (M, N).
+//   C[m, n] = sum_k A[m, k] * B[n, k]
+__global__ void matmul_at_b_t_kernel(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    float* __restrict__ C,
+    int M, int K, int N)
+{
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    if (m >= M || n >= N) return;
+
+    float acc = 0.f;
+    for (int k = 0; k < K; ++k) {
+        acc += A[m * K + k] * B[n * K + k];   // note the B indexing: [n, k], not [k, n]
+    }
+    C[m * N + n] = acc;
+}
+
+// Host wrapper. A: (M, K), B: (N, K). Output C: (M, N).
+void matmul_nt(Tensor& C, const Tensor& A, const Tensor& B) {
+    int M = A.size(0), K = A.size(1);
+    int N = B.size(0);
+    if (B.size(1) != K) {
+        std::fprintf(stderr, "matmul_nt: inner dims mismatch (A=%d, B=%d)\n",
+                     K, B.size(1));
+        std::abort();
+    }
+    dim3 block(16, 16);
+    dim3 grid((N + 15) / 16, (M + 15) / 16);
+    matmul_at_b_t_kernel<<<grid, block>>>(A.data, B.data, C.data, M, K, N);
+    CUDA_CHECK_KERNEL();
+}
+
+// Raw-pointer entry points used by ops that need to matmul on a sub-slice
+// of a larger buffer (e.g., per-batch in attention) without constructing
+// views into Tensor.
+
+void matmul_raw(float* C, const float* A, const float* B,
+                int M, int K, int N)
+{
+    dim3 block(16, 16);
+    dim3 grid((N + 15) / 16, (M + 15) / 16);
+    matmul_naive_kernel<<<grid, block>>>(A, B, C, M, K, N);
+    CUDA_CHECK_KERNEL();
+}
+
+// A @ B^T with A: (M, K), B: (N, K), output C: (M, N)
+void matmul_nt_raw(float* C, const float* A, const float* B,
+                   int M, int K, int N)
+{
+    dim3 block(16, 16);
+    dim3 grid((N + 15) / 16, (M + 15) / 16);
+    matmul_at_b_t_kernel<<<grid, block>>>(A, B, C, M, K, N);
+    CUDA_CHECK_KERNEL();
+}
+
+// C = A^T @ B
+//   A: (K, M), B: (K, N) — A is treated as if transposed, so the effective
+//   first operand has shape (M, K) and the product is (M, N).
+//   C[m, n] = sum_k A[k, m] * B[k, n]
+__global__ void matmul_a_t_b_kernel(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    float* __restrict__ C,
+    int M, int K, int N)
+{
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    if (m >= M || n >= N) return;
+
+    float acc = 0.f;
+    for (int k = 0; k < K; ++k) {
+        acc += A[k * M + m] * B[k * N + n];
+    }
+    C[m * N + n] = acc;
+}
+
+// A^T @ B. A: (K, M), B: (K, N). Output C: (M, N).
+void matmul_tn_raw(float* C, const float* A, const float* B,
+                   int M, int K, int N)
+{
+    dim3 block(16, 16);
+    dim3 grid((N + 15) / 16, (M + 15) / 16);
+    matmul_a_t_b_kernel<<<grid, block>>>(A, B, C, M, K, N);
+    CUDA_CHECK_KERNEL();
+}

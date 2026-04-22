@@ -32,6 +32,11 @@ set(KERNEL_SOFTMAX        kernels/softmax.cu)
 set(KERNEL_CE             kernels/cross_entropy.cu)
 set(KERNEL_LINEAR         kernels/linear.cu)
 set(KERNEL_OPTIM          kernels/optim.cu)
+set(KERNEL_ATTENTION      kernels/attention.cu)
+set(KERNEL_TRANSPOSE      kernels/transpose.cu)
+set(KERNEL_MHA            kernels/mha.cu)
+set(KERNEL_LAYERNORM      kernels/layernorm.cu)
+
 # ===================================================================
 # Helper: declare an executable target
 #
@@ -67,7 +72,11 @@ add_target(test_ce_vs_ref           tests/test_ce_vs_ref.cu           ${KERNEL_C
 # ===================================================================
 add_target(test_relu_backward       tests/test_relu_backward.cu       ${KERNEL_ELEMENTWISE})
 add_target(test_ce_backward         tests/test_ce_backward.cu         ${KERNEL_CE})
-
+add_target(test_mha_vs_ref
+    tests/test_mha_vs_ref.cu
+    ${KERNEL_MHA} ${KERNEL_ATTENTION} ${KERNEL_TRANSPOSE}
+    ${KERNEL_MATMUL} ${KERNEL_SOFTMAX}
+    ${KERNEL_LINEAR} ${KERNEL_ELEMENTWISE})
 # ===================================================================
 # Benchmarks
 # ===================================================================
@@ -101,6 +110,25 @@ add_target(train_mnist
     ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE}
     ${KERNEL_CE} ${KERNEL_OPTIM})
 
+add_target(test_attention_vs_ref
+    tests/test_attention_vs_ref.cu
+    ${KERNEL_ATTENTION} ${KERNEL_MATMUL} ${KERNEL_SOFTMAX})
+
+add_target(test_matmul_tn_vs_ref
+    tests/test_matmul_tn_vs_ref.cu
+    ${KERNEL_MATMUL})
+
+add_target(test_attention_backward
+    tests/test_attention_backward.cu
+    ${KERNEL_ATTENTION} ${KERNEL_MATMUL} ${KERNEL_SOFTMAX})
+
+add_target(test_layernorm_vs_ref
+    tests/test_layernorm_vs_ref.cu
+    ${KERNEL_LAYERNORM})
+
+add_target(test_layernorm_backward
+    tests/test_layernorm_backward.cu
+    ${KERNEL_LAYERNORM})
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:
@@ -115,7 +143,8 @@ add_custom_target(validation_tests DEPENDS
     test_elementwise_vs_ref
     test_softmax_vs_ref
     test_ce_vs_ref
-    test_linear_vs_ref)   # new
+    test_linear_vs_ref
+    test_attention_vs_ref)   # new
 
 add_custom_target(backward_tests DEPENDS
     test_relu_backward
