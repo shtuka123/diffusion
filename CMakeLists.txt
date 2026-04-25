@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_ARCHITECTURES 89)  # RTX 40-series (Ada Lovelace)
 
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -38,6 +39,16 @@ set(KERNEL_MHA            kernels/mha.cu)
 set(KERNEL_LAYERNORM      kernels/layernorm.cu)
 set(KERNEL_MLP            kernels/mlp.cu)
 set(KERNEL_TRANSFORMER_BLOCK  kernels/transformer_block.cu)
+set(KERNEL_EMBEDDING  kernels/embedding.cu)
+set(GPT_TINY_KERNELS
+    ${KERNEL_TRANSFORMER_BLOCK}
+    ${KERNEL_LAYERNORM} ${KERNEL_MHA} ${KERNEL_MLP}
+    ${KERNEL_ATTENTION} ${KERNEL_TRANSPOSE}
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_SOFTMAX}
+    ${KERNEL_CE} ${KERNEL_EMBEDDING}
+    ${KERNEL_ELEMENTWISE})
+
+
 
 
 
@@ -92,6 +103,11 @@ add_target(test_transformer_block_vs_ref
     ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_SOFTMAX}
     ${KERNEL_ELEMENTWISE})
 
+
+add_target(test_gpt_tiny_smoke
+    tests/test_gpt_tiny_smoke.cu
+    src/gpt_tiny.cu
+    ${GPT_TINY_KERNELS})
 
 add_target(bench_matmul
     tests/bench_matmul.cu
@@ -150,6 +166,21 @@ add_target(test_gelu_vs_ref
 add_target(test_mlp_vs_ref
     tests/test_mlp_vs_ref.cu
     ${KERNEL_MLP} ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE})
+
+add_target(test_embedding_vs_ref
+    tests/test_embedding_vs_ref.cu
+    ${KERNEL_EMBEDDING})
+
+add_target(train_gpt_tiny
+    src/train_gpt_tiny.cu
+    src/gpt_tiny.cu
+    ${GPT_TINY_KERNELS}
+    ${KERNEL_OPTIM})
+
+add_target(sample_gpt_tiny
+    src/sample_gpt_tiny.cu
+    src/gpt_tiny.cu
+    ${GPT_TINY_KERNELS})
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:
