@@ -170,3 +170,194 @@ void mha_forward(
     // ----- Output projection: y = attn_out_flat @ W_O + b_O -----
     linear_3d(y, cache.attn_out_flat, W_O, b_O);
 }   
+
+// MHA backward.
+//
+// Inputs:
+//   dy:    (B, T, D)  upstream gradient
+//   x:     (B, T, D)  original input (cached or re-passed)
+//   cache: from forward — has Q_heads, K_heads, V_heads, P, attn_out_flat, etc.
+//   W_Q, W_K, W_V, W_O: weight matrices (need shapes for backward)
+//
+// Outputs:
+//   dx:    (B, T, D)
+//   dW_Q, db_Q: (D, D), (D,)
+//   dW_K, db_K: (D, D), (D,)
+//   dW_V, db_V: (D, D), (D,)
+//   dW_O, db_O: (D, D), (D,)
+//
+// Scratch (allocated locally):
+//   d_attn_out_flat: (B, T, D)
+//   d_attn_out_heads: (B, H, T, dk)
+//   dQ_heads, dK_heads, dV_heads: (B*H, T, dk) when flat, (B, H, T, dk) when not
+//   dQ_raw, dK_raw, dV_raw: (B, T, D)
+//   dP_buf, dS_buf: (B*H, T, T) — for attention_backward
+
+void mha_backward(
+    Tensor& dx,
+    Tensor& dW_Q, Tensor& db_Q,
+    Tensor& dW_K, Tensor& db_K,
+    Tensor& dW_V, Tensor& db_V,
+    Tensor& dW_O, Tensor& db_O,
+    const Tensor& dy,
+    const Tensor& x,
+    MHACache& cache,
+    const Tensor& W_Q, const Tensor& W_K,
+    const Tensor& W_V, const Tensor& W_O,
+    int n_heads)
+{
+    int B = x.size(0), T = x.size(1), D = x.size(2);
+    int H = n_heads;
+    int d_k = D / H;
+
+    // Helpers
+    auto to2d = [](Tensor& t, int rows, int cols) {
+        t.shape = {rows, cols};
+    };
+    auto to3d = [](Tensor& t, int B, int T, int D) {
+        t.shape = {B, T, D};
+    };
+    auto to4d = [](Tensor& t, int d0, int d1, int d2, int d3) {
+        t.shape = {d0, d1, d2, d3};
+    };
+
+    // ===== Step 1: backward through output projection =====
+    // y = attn_out_flat @ W_O + b_O
+    // -> dW_O = attn_out_flat^T @ dy
+    //    db_O = sum(dy, axis=batch)
+    //    d_attn_out_flat = dy @ W_O^T
+
+    Tensor d_attn_out_flat({B, T, D});
+    {
+        Tensor& aof = cache.attn_out_flat;
+        Tensor& dy_nc = const_cast<Tensor&>(dy);
+
+        to2d(aof, B * T, D);
+        to2d(dy_nc, B * T, D);
+        to2d(d_attn_out_flat, B * T, D);
+
+        linear_backward(d_attn_out_flat, dW_O, db_O, aof, W_O, dy_nc);
+
+        to3d(aof, B, T, D);
+        to3d(dy_nc, B, T, D);
+        to3d(d_attn_out_flat, B, T, D);
+    }
+
+    // ===== Step 2: backward through reshape + transpose =====
+    // attn_out_heads (B, H, T, dk) -> transpose_12 -> (B, T, H, dk) -> view (B, T, D)
+    // Backward: d_attn_out_flat (B, T, D) -> view (B, T, H, dk) -> transpose_12 -> (B, H, T, dk)
+    Tensor d_attn_out_heads({B, H, T, d_k});
+    {
+        // View d_attn_out_flat as (B, T, H, dk), transpose to (B, H, T, dk).
+        Tensor& src = d_attn_out_flat;
+        to4d(src, B, T, H, d_k);
+        transpose_12(d_attn_out_heads, src);
+        to3d(src, B, T, D);
+    }
+
+    // ===== Step 3: backward through attention =====
+    // attention_forward took (B*H, T, dk) for Q, K, V. Backward needs the
+    // same flattened layout.
+    Tensor dQ_heads({B * H, T, d_k});
+    Tensor dK_heads({B * H, T, d_k});
+    Tensor dV_heads({B * H, T, d_k});
+    Tensor dP_buf({B * H, T, T});
+    Tensor dS_buf({B * H, T, T});
+
+    // Flatten d_attn_out_heads from (B, H, T, dk) to (B*H, T, dk).
+    {
+        d_attn_out_heads.shape = {B * H, T, d_k};
+    }
+    // Flatten Q_heads / K_heads / V_heads (they're stored as (B, H, T, dk) in cache)
+    cache.Q_heads.shape = {B * H, T, d_k};
+    cache.K_heads.shape = {B * H, T, d_k};
+    cache.V_heads.shape = {B * H, T, d_k};
+
+    attention_backward(
+        dQ_heads, dK_heads, dV_heads,
+        d_attn_out_heads,
+        cache.Q_heads, cache.K_heads, cache.V_heads,
+        cache.P,
+        dP_buf, dS_buf);
+
+    // Restore 4D shapes
+    cache.Q_heads.shape = {B, H, T, d_k};
+    cache.K_heads.shape = {B, H, T, d_k};
+    cache.V_heads.shape = {B, H, T, d_k};
+    dQ_heads.shape = {B, H, T, d_k};
+    dK_heads.shape = {B, H, T, d_k};
+    dV_heads.shape = {B, H, T, d_k};
+
+    // ===== Step 4: backward through transpose + reshape =====
+    // Forward: Q_raw (B, T, D) -> view (B, T, H, dk) -> transpose -> (B, H, T, dk) = Q_heads
+    // Backward: dQ_heads (B, H, T, dk) -> transpose_12 -> (B, T, H, dk) -> view (B, T, D) = dQ_raw
+
+    Tensor dQ_raw({B, T, D});
+    Tensor dK_raw({B, T, D});
+    Tensor dV_raw({B, T, D});
+
+    {
+        // Transpose backward: (B, H, T, dk) -> (B, T, H, dk)
+        // The output of transpose_12 has shape derived from input dims swapped.
+        // We want output (B, T, H, dk). Pass dQ_raw with shape (B, T, H, dk),
+        // mutate after.
+        dQ_raw.shape = {B, T, H, d_k};
+        transpose_12(dQ_raw, dQ_heads);
+        dQ_raw.shape = {B, T, D};   // re-view as (B, T, D)
+
+        dK_raw.shape = {B, T, H, d_k};
+        transpose_12(dK_raw, dK_heads);
+        dK_raw.shape = {B, T, D};
+
+        dV_raw.shape = {B, T, H, d_k};
+        transpose_12(dV_raw, dV_heads);
+        dV_raw.shape = {B, T, D};
+    }
+
+    // ===== Step 5: backward through input projections =====
+    // Q_raw = x @ W_Q + b_Q
+    // -> dW_Q = x^T @ dQ_raw
+    //    db_Q = sum(dQ_raw, axis=batch)
+    //    contribution to dx = dQ_raw @ W_Q^T
+
+    // x is needed three times (one for each of Q, K, V projections).
+    // Each linear_backward produces a separate "dx" contribution; we need
+    // to sum all three.
+
+    Tensor dx_from_Q({B, T, D});
+    Tensor dx_from_K({B, T, D});
+    Tensor dx_from_V({B, T, D});
+
+    {
+        Tensor& x_nc = const_cast<Tensor&>(x);
+        to2d(x_nc, B * T, D);
+        to2d(dQ_raw, B * T, D);
+        to2d(dK_raw, B * T, D);
+        to2d(dV_raw, B * T, D);
+        to2d(dx_from_Q, B * T, D);
+        to2d(dx_from_K, B * T, D);
+        to2d(dx_from_V, B * T, D);
+
+        linear_backward(dx_from_Q, dW_Q, db_Q, x_nc, W_Q, dQ_raw);
+        linear_backward(dx_from_K, dW_K, db_K, x_nc, W_K, dK_raw);
+        linear_backward(dx_from_V, dW_V, db_V, x_nc, W_V, dV_raw);
+
+        to3d(x_nc, B, T, D);
+        // dQ_raw, dK_raw, dV_raw are scratch — don't bother restoring
+        to3d(dx_from_Q, B, T, D);
+        to3d(dx_from_K, B, T, D);
+        to3d(dx_from_V, B, T, D);
+    }
+
+    // ===== Step 6: sum the three contributions to dx =====
+    // dx = dx_from_Q + dx_from_K + dx_from_V
+    {
+        int n = (int)dx.numel;
+        auto h_Q = dx_from_Q.to_host();
+        auto h_K = dx_from_K.to_host();
+        auto h_V = dx_from_V.to_host();
+        std::vector<float> out(n);
+        for (int i = 0; i < n; ++i) out[i] = h_Q[i] + h_K[i] + h_V[i];
+        dx.from_host(out);
+    }
+}

@@ -36,6 +36,10 @@ set(KERNEL_ATTENTION      kernels/attention.cu)
 set(KERNEL_TRANSPOSE      kernels/transpose.cu)
 set(KERNEL_MHA            kernels/mha.cu)
 set(KERNEL_LAYERNORM      kernels/layernorm.cu)
+set(KERNEL_MLP            kernels/mlp.cu)
+set(KERNEL_TRANSFORMER_BLOCK  kernels/transformer_block.cu)
+
+
 
 # ===================================================================
 # Helper: declare an executable target
@@ -80,6 +84,15 @@ add_target(test_mha_vs_ref
 # ===================================================================
 # Benchmarks
 # ===================================================================
+add_target(test_transformer_block_vs_ref
+    tests/test_transformer_block_vs_ref.cu
+    ${KERNEL_TRANSFORMER_BLOCK}
+    ${KERNEL_LAYERNORM} ${KERNEL_MHA} ${KERNEL_MLP}
+    ${KERNEL_ATTENTION} ${KERNEL_TRANSPOSE}
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_SOFTMAX}
+    ${KERNEL_ELEMENTWISE})
+
+
 add_target(bench_matmul
     tests/bench_matmul.cu
     ${KERNEL_MATMUL} ${KERNEL_MATMUL_CUBLAS} ${KERNEL_MATMUL_CPU})
@@ -129,6 +142,14 @@ add_target(test_layernorm_vs_ref
 add_target(test_layernorm_backward
     tests/test_layernorm_backward.cu
     ${KERNEL_LAYERNORM})
+
+add_target(test_gelu_vs_ref
+    tests/test_gelu_vs_ref.cu
+    ${KERNEL_ELEMENTWISE})
+
+add_target(test_mlp_vs_ref
+    tests/test_mlp_vs_ref.cu
+    ${KERNEL_MLP} ${KERNEL_LINEAR} ${KERNEL_MATMUL} ${KERNEL_ELEMENTWISE})
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:

@@ -98,3 +98,70 @@ void argmax_row(int* preds_device, const Tensor& logits) {
     argmax_row_kernel<<<grid, block>>>(logits.data, preds_device, B, C);
     CUDA_CHECK_KERNEL();
 }
+
+// GELU forward (exact via erf):
+//   y = 0.5 * x * (1 + erff(x / sqrt(2)))
+__global__ void gelu_forward_kernel(const float* x, float* y, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float xi = x[i];
+    y[i] = 0.5f * xi * (1.f + erff(xi * 0.7071067811865475f));
+}
+
+void gelu_forward(Tensor& y, const Tensor& x) {
+    if (y.numel != x.numel) {
+        std::fprintf(stderr, "gelu_forward: shape mismatch\n");
+        std::abort();
+    }
+    int n = (int)x.numel;
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    gelu_forward_kernel<<<grid, block>>>(x.data, y.data, n);
+    CUDA_CHECK_KERNEL();
+}
+
+// GELU backward:
+//   dx = dy * (Phi(x) + x * phi(x))
+//      = dy * (0.5 * (1 + erf(x/sqrt(2))) + x * exp(-x^2/2)/sqrt(2*pi))
+__global__ void gelu_backward_kernel(
+    const float* dy, const float* x, float* dx, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float xi = x[i];
+    // Phi(x) = 0.5 * (1 + erf(x / sqrt(2)))
+    float phi_x = 0.5f * (1.f + erff(xi * 0.7071067811865475f));
+    // pdf(x) = exp(-x^2/2) / sqrt(2*pi)
+    float pdf_x = expf(-0.5f * xi * xi) * 0.3989422804014327f;
+    dx[i] = dy[i] * (phi_x + xi * pdf_x);
+}
+
+void gelu_backward(Tensor& dx, const Tensor& dy, const Tensor& x) {
+    if (dx.numel != x.numel || dy.numel != x.numel) {
+        std::fprintf(stderr, "gelu_backward: shape mismatch\n");
+        std::abort();
+    }
+    int n = (int)x.numel;
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    gelu_backward_kernel<<<grid, block>>>(dy.data, x.data, dx.data, n);
+    CUDA_CHECK_KERNEL();
+}
+
+// Elementwise add: y = a + b. (Used for residual connections.)
+__global__ void add_kernel(const float* a, const float* b, float* y, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) y[i] = a[i] + b[i];
+}
+
+void add(Tensor& y, const Tensor& a, const Tensor& b) {
+    if (a.numel != b.numel || a.numel != y.numel) {
+        std::fprintf(stderr, "add: shape mismatch\n");
+        std::abort();
+    }
+    int n = (int)a.numel;
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    add_kernel<<<grid, block>>>(a.data, b.data, y.data, n);
+    CUDA_CHECK_KERNEL();
+}
