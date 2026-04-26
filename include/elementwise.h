@@ -9,3 +9,9 @@ void gelu_forward(Tensor& y, const Tensor& x);
 void gelu_backward(Tensor& dx, const Tensor& dy, const Tensor& x);
 
 void add(Tensor& y, const Tensor& a, const Tensor& b);
+
+void silu_forward(Tensor& y, const Tensor& x);
+void silu_backward(Tensor& dx, const Tensor& dy, const Tensor& x);
+
+void concat_2d(Tensor& out, const Tensor& a, const Tensor& b);
+void split_2d(Tensor& d_a, Tensor& d_b, const Tensor& d_out);

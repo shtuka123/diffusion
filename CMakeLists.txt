@@ -48,6 +48,15 @@ set(GPT_TINY_KERNELS
     ${KERNEL_CE} ${KERNEL_EMBEDDING}
     ${KERNEL_ELEMENTWISE})
 
+set(KERNEL_DIFFUSION  kernels/diffusion.cu)
+set(KERNEL_TIMESTEP_EMBED  kernels/timestep_embed.cu)
+set(MLP_DENOISER_SOURCES
+    src/mlp_denoiser.cu
+    ${KERNEL_DIFFUSION}
+    ${KERNEL_TIMESTEP_EMBED}
+    ${KERNEL_EMBEDDING}
+    ${KERNEL_LINEAR} ${KERNEL_MATMUL}
+    ${KERNEL_ELEMENTWISE})
 
 
 
@@ -181,6 +190,40 @@ add_target(sample_gpt_tiny
     src/sample_gpt_tiny.cu
     src/gpt_tiny.cu
     ${GPT_TINY_KERNELS})
+
+add_target(test_gpt_tiny_vs_ref
+    tests/test_gpt_tiny_vs_ref.cu
+    src/gpt_tiny.cu
+    ${GPT_TINY_KERNELS})
+
+add_target(test_adam_vs_ref
+    tests/test_adam_vs_ref.cu
+    ${KERNEL_OPTIM})
+
+add_target(test_scheduler_sanity
+    tests/test_scheduler_sanity.cu)
+
+add_target(test_diffusion_vs_ref
+    tests/test_diffusion_vs_ref.cu
+    ${KERNEL_DIFFUSION})
+
+add_target(test_timestep_embed_vs_ref
+    tests/test_timestep_embed_vs_ref.cu
+    ${KERNEL_TIMESTEP_EMBED} ${KERNEL_ELEMENTWISE})
+
+
+add_target(test_mlp_denoiser_smoke
+    tests/test_mlp_denoiser_smoke.cu
+    ${MLP_DENOISER_SOURCES})
+
+add_target(train_diffusion_mlp
+    src/train_diffusion_mlp.cu
+    ${MLP_DENOISER_SOURCES}
+    ${KERNEL_OPTIM})
+
+add_target(sample_ddim_mlp
+    src/sample_ddim_mlp.cu
+    ${MLP_DENOISER_SOURCES})
 # ===================================================================
 # Convenience meta-targets
 # Run a logical group with:

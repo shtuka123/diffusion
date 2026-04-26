@@ -8,7 +8,7 @@
 #include "optim.h"
 #include "shakespeare.h"
 #include "cuda_utils.h"
-
+#include "scheduler.h"
 #include <cstdio>
 #include <vector>
 #include <random>
@@ -26,10 +26,18 @@ int main() {
     int B = 16;
     int T = 64;
 
-    int n_steps = 1000;
-    float lr = 0.1f;
+    int n_steps = 2000;
+    AdamState adam;
+    adam.beta1 = 0.9f;
+    adam.beta2 = 0.999f;
+    adam.eps = 1e-8f;
     int log_every = 50;
     uint64_t seed = 42;
+
+    // LR schedule
+    float lr_max = 3e-3f;     // peak after warmup
+    float lr_min = 1e-4f;     // floor for long tail
+    int warmup_steps = std::min(100, n_steps / 10);  // ~10% warmup
 
     // ----- Data -----
     Shakespeare data("data/tinyshakespeare.txt");
@@ -60,7 +68,7 @@ int main() {
     std::mt19937 rng(seed + 99);
 
     // ----- Training loop -----
-    std::printf("Training for %d steps, B=%d T=%d lr=%.3f\n", n_steps, B, T, lr);
+    std::printf("Training for %d steps, B=%d T=%d lr=%.3f\n", n_steps, B, T, adam.lr);
     std::printf("---------------------------------------------\n");
 
     float running_loss = 0.f;
@@ -90,16 +98,20 @@ int main() {
         model.backward(dlogits, d_x, B, T);
 
         // ----- Optimizer step -----
-        sgd_step_all(params, lr);
+        adam.lr = warmup_cosine_lr(step, warmup_steps, n_steps, lr_max, lr_min);
+        adam_step_all(params, adam);
         zero_grads(params);
 
         // ----- Report -----
-        if ((step + 1) % log_every == 0) {
-            float avg = running_loss / running_count;
-            std::printf("  step %4d / %d  loss %.4f\n", step + 1, n_steps, avg);
-            running_loss = 0.f;
-            running_count = 0;
-        }
+        int n_steps = 2000;   // was 1000
+// ...
+if ((step + 1) % log_every == 0) {
+    float avg = running_loss / running_count;
+    std::printf("  step %4d / %d  lr=%.5f  loss %.4f\n",
+                step + 1, n_steps, adam.lr, avg);
+    running_loss = 0.f;
+    running_count = 0;
+}
     }
 
     std::printf("\nTraining complete.\n");
